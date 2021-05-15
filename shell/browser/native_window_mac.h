@@ -8,12 +8,14 @@
 #import <Cocoa/Cocoa.h>
 
 #include <memory>
+#include <queue>
 #include <string>
 #include <tuple>
 #include <vector>
 
 #include "base/mac/scoped_nsobject.h"
 #include "shell/browser/native_window.h"
+#include "ui/display/display_observer.h"
 #include "ui/native_theme/native_theme_observer.h"
 #include "ui/views/controls/native/native_view_host.h"
 
@@ -27,7 +29,9 @@ namespace electron {
 
 class RootViewMac;
 
-class NativeWindowMac : public NativeWindow, public ui::NativeThemeObserver {
+class NativeWindowMac : public NativeWindow,
+                        public ui::NativeThemeObserver,
+                        public display::DisplayObserver {
  public:
   NativeWindowMac(const gin_helper::Dictionary& options, NativeWindow* parent);
   ~NativeWindowMac() override;
@@ -101,6 +105,7 @@ class NativeWindowMac : public NativeWindow, public ui::NativeThemeObserver {
   void SetIgnoreMouseEvents(bool ignore, bool forward) override;
   void SetContentProtection(bool enable) override;
   void SetFocusable(bool focusable) override;
+  bool IsFocusable() override;
   void AddBrowserView(NativeBrowserView* browser_view) override;
   void RemoveBrowserView(NativeBrowserView* browser_view) override;
   void SetTopBrowserView(NativeBrowserView* browser_view) override;
@@ -124,6 +129,7 @@ class NativeWindowMac : public NativeWindow, public ui::NativeThemeObserver {
   void SetTrafficLightPosition(base::Optional<gfx::Point> position) override;
   base::Optional<gfx::Point> GetTrafficLightPosition() const override;
   void RedrawTrafficLights() override;
+  void UpdateFrame() override;
   void SetTouchBar(
       std::vector<gin_helper::PersistentDictionary> items) override;
   void RefreshTouchBarItem(const std::string& item_id) override;
@@ -155,10 +161,18 @@ class NativeWindowMac : public NativeWindow, public ui::NativeThemeObserver {
   // Use a custom content view instead of Chromium's BridgedContentView.
   void OverrideNSWindowContentView();
 
+  void UpdateVibrancyRadii(bool fullscreen);
+
   // Set the attribute of NSWindow while work around a bug of zoom button.
   void SetStyleMask(bool on, NSUInteger flag);
   void SetCollectionBehavior(bool on, NSUInteger flag);
   void SetWindowLevel(int level);
+
+  enum class FullScreenTransitionState { ENTERING, EXITING, NONE };
+
+  // Handle fullscreen transitions.
+  void SetFullScreenTransitionState(FullScreenTransitionState state);
+  void HandlePendingFullscreenTransitions();
 
   enum class VisualEffectState {
     kFollowWindow,
@@ -178,7 +192,6 @@ class NativeWindowMac : public NativeWindow, public ui::NativeThemeObserver {
   ElectronTouchBar* touch_bar() const { return touch_bar_.get(); }
   bool zoom_to_page_width() const { return zoom_to_page_width_; }
   bool always_simple_fullscreen() const { return always_simple_fullscreen_; }
-  bool exiting_fullscreen() const { return exiting_fullscreen_; }
 
  protected:
   // views::WidgetDelegate:
@@ -187,6 +200,10 @@ class NativeWindowMac : public NativeWindow, public ui::NativeThemeObserver {
 
   // ui::NativeThemeObserver:
   void OnNativeThemeUpdated(ui::NativeTheme* observed_theme) override;
+
+  // display::DisplayObserver:
+  void OnDisplayMetricsChanged(const display::Display& display,
+                               uint32_t changed_metrics) override;
 
  private:
   // Add custom layers to the content view.
@@ -216,11 +233,16 @@ class NativeWindowMac : public NativeWindow, public ui::NativeThemeObserver {
   std::unique_ptr<RootViewMac> root_view_;
 
   bool is_kiosk_ = false;
-  bool was_fullscreen_ = false;
   bool zoom_to_page_width_ = false;
   bool resizable_ = true;
-  bool exiting_fullscreen_ = false;
   base::Optional<gfx::Point> traffic_light_position_;
+
+  std::queue<bool> pending_transitions_;
+  FullScreenTransitionState fullscreen_transition_state() const {
+    return fullscreen_transition_state_;
+  }
+  FullScreenTransitionState fullscreen_transition_state_ =
+      FullScreenTransitionState::NONE;
 
   NSInteger attention_request_id_ = 0;  // identifier from requestUserAttention
 
@@ -249,8 +271,7 @@ class NativeWindowMac : public NativeWindow, public ui::NativeThemeObserver {
   NSInteger original_level_;
   NSUInteger simple_fullscreen_mask_;
 
-  base::scoped_nsobject<NSColor> background_color_before_vibrancy_;
-  bool transparency_before_vibrancy_ = false;
+  std::string vibrancy_type_;
 
   // The presentation options before entering simple fullscreen mode.
   NSApplicationPresentationOptions simple_fullscreen_options_;

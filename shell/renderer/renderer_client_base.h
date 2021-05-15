@@ -13,6 +13,7 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "electron/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
+#include "shell/common/gin_helper/dictionary.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 // In SHARED_INTERMEDIATE_DIR.
 #include "widevine_cdm_version.h"  // NOLINT(build/include_directory)
@@ -59,6 +60,8 @@ class RendererClientBase : public content::ContentRendererClient
   RendererClientBase();
   ~RendererClientBase() override;
 
+  static RendererClientBase* Get();
+
 #if BUILDFLAG(ENABLE_BUILTIN_SPELLCHECKER)
   // service_manager::LocalInterfaceProvider implementation.
   void GetInterface(const std::string& name,
@@ -71,7 +74,7 @@ class RendererClientBase : public content::ContentRendererClient
                                         content::RenderFrame* render_frame) = 0;
   virtual void DidClearWindowObject(content::RenderFrame* render_frame);
   virtual void SetupMainWorldOverrides(v8::Handle<v8::Context> context,
-                                       content::RenderFrame* render_frame) = 0;
+                                       content::RenderFrame* render_frame);
 
   std::unique_ptr<blink::WebPrescientNetworking> CreatePrescientNetworking(
       content::RenderFrame* render_frame) override;
@@ -83,7 +86,11 @@ class RendererClientBase : public content::ContentRendererClient
   static v8::Local<v8::Value> RunScript(v8::Local<v8::Context> context,
                                         v8::Local<v8::String> source);
 
-  // v8Util.getHiddenValue(window.frameElement, 'internal')
+  static void AllowGuestViewElementDefinition(
+      v8::Isolate* isolate,
+      v8::Local<v8::Object> context,
+      v8::Local<v8::Function> register_cb);
+
   bool IsWebViewFrame(v8::Handle<v8::Context> context,
                       content::RenderFrame* render_frame) const;
 
@@ -92,8 +99,9 @@ class RendererClientBase : public content::ContentRendererClient
 #endif
 
  protected:
-  void AddRenderBindings(v8::Isolate* isolate,
-                         v8::Local<v8::Object> binding_object);
+  void BindProcess(v8::Isolate* isolate,
+                   gin_helper::Dictionary* process,
+                   content::RenderFrame* render_frame);
 
   // content::ContentRendererClient:
   void RenderThreadStarted() override;

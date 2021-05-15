@@ -47,7 +47,11 @@ async function main () {
 
   const onlyTests = args.only && args.only.split(',');
 
-  const DISABLED_TESTS = ['nannew-test.js'];
+  const DISABLED_TESTS = [
+    'nannew-test.js',
+    'setcallhandler-test.js', // TODO(jkleinsc) renable once https://github.com/electron/electron/pull/29028 lands
+    'typedarrays-test.js' // TODO(nornagon): https://github.com/electron/electron/issues/28414
+  ];
   const testsToRun = fs.readdirSync(path.resolve(NAN_DIR, 'test', 'js'))
     .filter(test => !DISABLED_TESTS.includes(test))
     .filter(test => {

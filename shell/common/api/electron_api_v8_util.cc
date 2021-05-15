@@ -38,7 +38,7 @@ struct Converter<std::pair<Type1, Type2>> {
     if (!val->IsArray())
       return false;
 
-    v8::Local<v8::Array> array(v8::Local<v8::Array>::Cast(val));
+    v8::Local<v8::Array> array = val.As<v8::Array>();
     if (array->Length() != 2)
       return false;
 
@@ -138,6 +138,10 @@ void TriggerFatalErrorForTesting(v8::Isolate* isolate) {
   v8::ExtensionConfiguration config(1, bDeps);
   v8::Context::New(isolate, &config);
 }
+
+void RunUntilIdle() {
+  base::RunLoop().RunUntilIdle();
+}
 #endif
 
 void Initialize(v8::Local<v8::Object> exports,
@@ -158,6 +162,7 @@ void Initialize(v8::Local<v8::Object> exports,
   dict.SetMethod("getWeaklyTrackedValues", &GetWeaklyTrackedValues);
   dict.SetMethod("clearWeaklyTrackedValues", &ClearWeaklyTrackedValues);
   dict.SetMethod("weaklyTrackValue", &WeaklyTrackValue);
+  dict.SetMethod("runUntilIdle", &RunUntilIdle);
 #endif
 }
 

@@ -14,6 +14,7 @@
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/thread_pool.h"
 #include "chrome/common/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "shell/browser/electron_browser_context.h"
@@ -48,7 +49,7 @@ FileSelectHelper::FileSelectHelper(
   DCHECK(web_contents_);
 
   content::WebContentsObserver::Observe(web_contents_);
-  observer_.Add(render_frame_host_->GetRenderViewHost()->GetWidget());
+  observation_.Observe(render_frame_host_->GetRenderViewHost()->GetWidget());
 }
 
 FileSelectHelper::~FileSelectHelper() = default;
@@ -125,7 +126,7 @@ void FileSelectHelper::OnListDone(int error) {
   std::vector<FileChooserFileInfoPtr> file_info;
   for (const auto& path : lister_paths_)
     file_info.push_back(FileChooserFileInfo::NewNativeFile(
-        NativeFileInfo::New(path, base::string16())));
+        NativeFileInfo::New(path, std::u16string())));
 
   OnFilesSelected(std::move(file_info), lister_base_dir_);
 }
@@ -234,7 +235,8 @@ void FileSelectHelper::OnFilesSelected(
 void FileSelectHelper::RenderWidgetHostDestroyed(
     content::RenderWidgetHost* widget_host) {
   render_frame_host_ = nullptr;
-  observer_.Remove(widget_host);
+  DCHECK(observation_.IsObservingSource(widget_host));
+  observation_.Reset();
 }
 
 // content::WebContentsObserver:

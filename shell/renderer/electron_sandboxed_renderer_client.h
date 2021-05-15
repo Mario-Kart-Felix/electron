@@ -21,14 +21,12 @@ class ElectronSandboxedRendererClient : public RendererClientBase {
 
   void InitializeBindings(v8::Local<v8::Object> binding,
                           v8::Local<v8::Context> context,
-                          bool is_main_frame);
+                          content::RenderFrame* render_frame);
   // electron::RendererClientBase:
   void DidCreateScriptContext(v8::Handle<v8::Context> context,
                               content::RenderFrame* render_frame) override;
   void WillReleaseScriptContext(v8::Handle<v8::Context> context,
                                 content::RenderFrame* render_frame) override;
-  void SetupMainWorldOverrides(v8::Handle<v8::Context> context,
-                               content::RenderFrame* render_frame) override;
   // content::ContentRendererClient:
   void RenderFrameCreated(content::RenderFrame*) override;
   void RenderViewCreated(content::RenderView*) override;
@@ -37,7 +35,6 @@ class ElectronSandboxedRendererClient : public RendererClientBase {
   bool ShouldFork(blink::WebLocalFrame* frame,
                   const GURL& url,
                   const std::string& http_method,
-                  bool is_initial_navigation,
                   bool is_server_redirect) override;
 
  private:

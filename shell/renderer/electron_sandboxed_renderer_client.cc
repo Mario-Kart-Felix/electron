@@ -14,6 +14,7 @@
 #include "shell/common/api/electron_bindings.h"
 #include "shell/common/application_info.h"
 #include "shell/common/gin_helper/dictionary.h"
+#include "shell/common/gin_helper/microtasks_scope.h"
 #include "shell/common/node_bindings.h"
 #include "shell/common/node_includes.h"
 #include "shell/common/node_util.h"
@@ -114,7 +115,7 @@ void InvokeHiddenCallback(v8::Handle<v8::Context> context,
                           .ToLocalChecked();
   auto callback_value = binding->Get(context, callback_key).ToLocalChecked();
   DCHECK(callback_value->IsFunction());  // set by sandboxed_renderer/init.js
-  auto callback = v8::Handle<v8::Function>::Cast(callback_value);
+  auto callback = callback_value.As<v8::Function>();
   ignore_result(callback->Call(context, binding, 0, nullptr));
 }
 
@@ -131,7 +132,7 @@ ElectronSandboxedRendererClient::~ElectronSandboxedRendererClient() = default;
 void ElectronSandboxedRendererClient::InitializeBindings(
     v8::Local<v8::Object> binding,
     v8::Local<v8::Context> context,
-    bool is_main_frame) {
+    content::RenderFrame* render_frame) {
   auto* isolate = context->GetIsolate();
   gin_helper::Dictionary b(isolate, binding);
   b.SetMethod("get", GetBinding);
@@ -141,13 +142,13 @@ void ElectronSandboxedRendererClient::InitializeBindings(
   b.Set("process", process);
 
   ElectronBindings::BindProcess(isolate, &process, metrics_.get());
+  BindProcess(isolate, &process, render_frame);
 
   process.SetMethod("uptime", Uptime);
   process.Set("argv", base::CommandLine::ForCurrentProcess()->argv());
   process.SetReadOnly("pid", base::GetCurrentProcId());
   process.SetReadOnly("sandboxed", true);
   process.SetReadOnly("type", "renderer");
-  process.SetReadOnly("isMainFrame", is_main_frame);
 }
 
 void ElectronSandboxedRendererClient::RenderFrameCreated(
@@ -168,6 +169,8 @@ void ElectronSandboxedRendererClient::RunScriptsAtDocumentStart(
     return;
 
   auto* isolate = blink::MainThreadIsolate();
+  gin_helper::MicrotasksScope microtasks_scope(
+      isolate, v8::MicrotasksScope::kDoNotRunMicrotasks);
   v8::HandleScope handle_scope(isolate);
 
   v8::Local<v8::Context> context =
@@ -184,6 +187,8 @@ void ElectronSandboxedRendererClient::RunScriptsAtDocumentEnd(
     return;
 
   auto* isolate = blink::MainThreadIsolate();
+  gin_helper::MicrotasksScope microtasks_scope(
+      isolate, v8::MicrotasksScope::kDoNotRunMicrotasks);
   v8::HandleScope handle_scope(isolate);
 
   v8::Local<v8::Context> context =
@@ -204,8 +209,10 @@ void ElectronSandboxedRendererClient::DidCreateScriptContext(
   bool is_main_frame = render_frame->IsMainFrame();
   bool is_devtools =
       IsDevTools(render_frame) || IsDevToolsExtension(render_frame);
+
   bool allow_node_in_sub_frames =
       render_frame->GetBlinkPreferences().node_integration_in_sub_frames;
+
   bool should_load_preload =
       (is_main_frame || is_devtools || allow_node_in_sub_frames) &&
       !IsWebViewFrame(context, render_frame);
@@ -218,8 +225,7 @@ void ElectronSandboxedRendererClient::DidCreateScriptContext(
   // argument.
   auto* isolate = context->GetIsolate();
   auto binding = v8::Object::New(isolate);
-  InitializeBindings(binding, context, render_frame->IsMainFrame());
-  AddRenderBindings(isolate, binding);
+  InitializeBindings(binding, context, render_frame);
 
   std::vector<v8::Local<v8::String>> sandbox_preload_bundle_params = {
       node::FIXED_ONE_BYTE_STRING(isolate, "binding")};
@@ -235,34 +241,6 @@ void ElectronSandboxedRendererClient::DidCreateScriptContext(
   InvokeHiddenCallback(context, kLifecycleKey, "onLoaded");
 }
 
-void ElectronSandboxedRendererClient::SetupMainWorldOverrides(
-    v8::Handle<v8::Context> context,
-    content::RenderFrame* render_frame) {
-  auto prefs = render_frame->GetBlinkPreferences();
-  // We only need to run the isolated bundle if webview is enabled
-  if (!prefs.webview_tag)
-    return;
-
-  // Setup window overrides in the main world context
-  // Wrap the bundle into a function that receives the isolatedWorld as
-  // an argument.
-  auto* isolate = context->GetIsolate();
-
-  gin_helper::Dictionary process = gin::Dictionary::CreateEmpty(isolate);
-  process.SetMethod("_linkedBinding", GetBinding);
-
-  std::vector<v8::Local<v8::String>> isolated_bundle_params = {
-      node::FIXED_ONE_BYTE_STRING(isolate, "nodeProcess"),
-      node::FIXED_ONE_BYTE_STRING(isolate, "isolatedWorld")};
-
-  std::vector<v8::Local<v8::Value>> isolated_bundle_args = {
-      process.GetHandle(),
-      GetContext(render_frame->GetWebFrame(), isolate)->Global()};
-
-  util::CompileAndCall(context, "electron/js2c/isolated_bundle",
-                       &isolated_bundle_params, &isolated_bundle_args, nullptr);
-}
-
 void ElectronSandboxedRendererClient::WillReleaseScriptContext(
     v8::Handle<v8::Context> context,
     content::RenderFrame* render_frame) {
@@ -270,6 +248,8 @@ void ElectronSandboxedRendererClient::WillReleaseScriptContext(
     return;
 
   auto* isolate = context->GetIsolate();
+  gin_helper::MicrotasksScope microtasks_scope(
+      isolate, v8::MicrotasksScope::kDoNotRunMicrotasks);
   v8::HandleScope handle_scope(isolate);
   v8::Context::Scope context_scope(context);
   InvokeHiddenCallback(context, kLifecycleKey, "onExit");
@@ -278,7 +258,6 @@ void ElectronSandboxedRendererClient::WillReleaseScriptContext(
 bool ElectronSandboxedRendererClient::ShouldFork(blink::WebLocalFrame* frame,
                                                  const GURL& url,
                                                  const std::string& http_method,
-                                                 bool is_initial_navigation,
                                                  bool is_server_redirect) {
   return true;
 }

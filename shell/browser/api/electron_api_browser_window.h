@@ -62,7 +62,7 @@ class BrowserWindow : public BaseWindow,
       const std::vector<mojom::DraggableRegionPtr>& regions) override;
   void OnSetContentBounds(const gfx::Rect& rect) override;
   void OnActivateContents() override;
-  void OnPageTitleUpdated(const base::string16& title,
+  void OnPageTitleUpdated(const std::u16string& title,
                           bool explicit_set) override;
 #if defined(OS_MAC)
   void OnDevToolsResized() override;
@@ -117,7 +117,7 @@ class BrowserWindow : public BaseWindow,
 
   // Closure that would be called when window is unresponsive when closing,
   // it should be cancelled when we can prove that the window is responsive.
-  base::CancelableClosure window_unresponsive_closure_;
+  base::CancelableRepeatingClosure window_unresponsive_closure_;
 
 #if defined(OS_MAC)
   std::vector<mojom::DraggableRegionPtr> draggable_regions_;
